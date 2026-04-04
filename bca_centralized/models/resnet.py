@@ -4,54 +4,50 @@ from torchvision import models
 
 
 def build_resnet50(num_classes=2, pretrained=True, device="cuda"):
-    if device == "cuda" and not torch.cuda.is_available():
-        raise RuntimeError("CUDA not available")
+    device = torch.device(device if torch.cuda.is_available() else "cpu")
 
-    weights = models.ResNet50_Weights.IMAGENET1K_V1 if pretrained else None
+    weights = models.ResNet50_Weights.IMAGENET1K_V2 if pretrained else None
     model = models.resnet50(weights=weights)
 
     in_features = model.fc.in_features
 
     model.fc = nn.Sequential(
         nn.Linear(in_features, 512),
-        nn.BatchNorm1d(512),
+        nn.GroupNorm(8, 512),
         nn.ReLU(inplace=True),
         nn.Dropout(0.5),
         nn.Linear(512, num_classes)
     )
 
     model = model.to(device)
-
-    print(f"Model loaded on: {device}")
     return model
 
 
 def freeze_backbone(model):
-    for name, param in model.named_parameters():
-        if "fc" not in name:
-            param.requires_grad = False
+    for param in model.parameters():
+        param.requires_grad = False
+
+    for param in model.fc.parameters():
+        param.requires_grad = True
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
-    print(f"Frozen backbone | Trainable: {trainable:,} / {total:,}")
+    return trainable, total
 
 
 def unfreeze_for_finetuning(model, optimizer, finetune_lr=1e-5):
     for name, param in model.named_parameters():
-        if "layer4" in name or "fc" in name:
+        if "layer4" in name:
             param.requires_grad = True
 
-    new_params = [
-        p for n, p in model.named_parameters()
-        if ("layer4" in n) and p.requires_grad
-    ]
+    params = [p for p in model.parameters() if p.requires_grad]
 
-    if len(new_params) > 0:
-        optimizer.add_param_group({"params": new_params, "lr": finetune_lr})
+    optimizer.param_groups.clear()
+    optimizer.add_param_group({"params": params, "lr": finetune_lr})
 
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     total = sum(p.numel() for p in model.parameters())
-    print(f"Finetuning | Trainable: {trainable:,} / {total:,}")
+    return trainable, total
 
 
 def prepare_input(x):
@@ -60,17 +56,20 @@ def prepare_input(x):
     return x.contiguous()
 
 
+def get_model(num_classes=2, pretrained=True, device="cuda"):
+    return build_resnet50(num_classes, pretrained, device)
+
+
 if __name__ == "__main__":
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    model = build_resnet50(device=device)
+    model = get_model(device=device)
 
-    x = torch.randn(2, 1, 128, 128).to(device)
+    x = torch.randn(2, 1, 224, 224).to(device)
     x = prepare_input(x)
 
     out = model(x)
 
-    print(f"Input: {x.shape}")
-    print(f"Output: {out.shape}")
-    print(f"Device: {next(model.parameters()).device}")
-    print(f"Parameters: {sum(p.numel() for p in model.parameters()):,}")
+    print(x.shape, out.shape)
+    print(next(model.parameters()).device)
+    print(sum(p.numel() for p in model.parameters()))

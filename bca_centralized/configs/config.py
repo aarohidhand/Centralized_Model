@@ -30,28 +30,28 @@ for path in [
 CENTERS = ["Center_1", "Center_2", "Center_3", "Center_4"]
 
 PATCH_SEG     = 160
-PATCH_CLS     = 128
+PATCH_CLS     = 224
 EXPAND_VOXEL  = 5
 RANDOM_OFFSET = 12
 RANDOM_SEED   = 42
 
-TEST_RATIO_SEG = 0.30
-TEST_RATIO_CLS = 0.40
+TEST_RATIO_SEG = 0.25
+TEST_RATIO_CLS = 0.30
 VAL_RATIO      = 0.15
 
 CV_FOLDS = 5
 
-SEG_EPOCHS  = 150
+SEG_EPOCHS  = 180
 SEG_BATCH   = 8
-SEG_LR      = 1e-5
+SEG_LR      = 3e-4
 SEG_IN_CH   = 1
 SEG_OUT_CH  = 1
 
 CLS_EPOCHS       = 200
 CLS_BATCH        = 32
-CLS_LR_HEAD      = 1e-4
+CLS_LR_HEAD      = 3e-4
 CLS_LR_FINETUNE  = 1e-5
-CLS_FINETUNE_EP  = 50
+CLS_FINETUNE_EP  = 40
 CLS_CLASSES      = 2
 CLS_PRETRAINED   = True
 
@@ -59,29 +59,19 @@ DICE_SMOOTH  = 1.0
 FOCAL_GAMMA  = 2.0
 FOCAL_ALPHA  = 0.25
 
-if not torch.cuda.is_available():
-    raise RuntimeError("❌ CUDA GPU not available. Fix your setup before running.")
+DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
 
-DEVICE = "cuda"
-
-print("=" * 50)
-print("GPU CONFIGURATION")
-print("=" * 50)
-print(f"Device: {DEVICE}")
-print(f"GPU: {torch.cuda.get_device_name(0)}")
-print(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.2f} GB")
-print("=" * 50)
-
-NUM_WORKERS = 2
+NUM_WORKERS = 0
 PIN_MEMORY  = True
 
 SEG_THRESHOLD = 0.5
 SAVE_EVERY    = 50
 LOG_EVERY     = 10
-PATIENCE      = 50
+PATIENCE      = 30
 
 torch.manual_seed(RANDOM_SEED)
 np.random.seed(RANDOM_SEED)
 random.seed(RANDOM_SEED)
 
 torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.deterministic = False

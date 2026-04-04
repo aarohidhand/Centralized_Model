@@ -1,0 +1,17 @@
+filename,center,patient,slice,label
+Center_1_101_sl005,Center_1,101,5,1
+Center_1_101_sl006,Center_1,101,6,1
+Center_1_101_sl010,Center_1,101,10,1
+Center_1_106_sl008,Center_1,106,8,0
+Center_1_106_sl007,Center_1,106,7,0
+Center_1_106_sl005,Center_1,106,5,0
+Center_1_104_sl007,Center_1,104,7,0
+Center_1_104_sl008,Center_1,104,8,0
+Center_1_101_sl007,Center_1,101,7,1
+Center_1_106_sl009,Center_1,106,9,0
+Center_1_101_sl009,Center_1,101,9,1
+Center_1_104_sl006,Center_1,104,6,0
+Center_1_104_sl009,Center_1,104,9,0
+Center_1_106_sl006,Center_1,106,6,0
+Center_1_101_sl008,Center_1,101,8,1
+Center_1_104_sl005,Center_1,104,5,0

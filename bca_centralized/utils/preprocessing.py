@@ -26,9 +26,15 @@ np.random.seed(RANDOM_SEED)
 def load_nii(path):
     try:
         return np.asarray(nib.load(path).dataobj, dtype=np.float32)
-    except Exception as e:
-        print(f"[ERROR] Failed to load: {path}")
+    except:
         return None
+
+
+def normalize(img):
+    p1, p99 = np.percentile(img, (1, 99))
+    img = np.clip(img, p1, p99)
+    img = (img - img.min()) / (img.max() - img.min() + 1e-8)
+    return img
 
 
 def roi_crop(img, mask, expand):
@@ -36,64 +42,42 @@ def roi_crop(img, mask, expand):
     if len(idx) == 0:
         return img, mask
 
-    d1_min, d1_max = idx[:, 0].min(), idx[:, 0].max()
-    d2_min, d2_max = idx[:, 1].min(), idx[:, 1].max()
-    d3_min, d3_max = idx[:, 2].min(), idx[:, 2].max()
+    mins = idx.min(axis=0)
+    maxs = idx.max(axis=0)
 
-    d1_min = max(0, d1_min - expand)
-    d1_max = min(img.shape[0], d1_max + expand)
-    d2_min = max(0, d2_min - expand)
-    d2_max = min(img.shape[1], d2_max + expand)
-    d3_min = max(0, d3_min - 1)
-    d3_max = min(img.shape[2], d3_max + 1)
+    mins = np.maximum(mins - expand, 0)
+    maxs = np.minimum(maxs + expand, np.array(img.shape) - 1)
 
-    return img[d1_min:d1_max, d2_min:d2_max, d3_min:d3_max], \
-           mask[d1_min:d1_max, d2_min:d2_max, d3_min:d3_max]
-
-
-def crop_and_resize(arr, size, cx=None, cy=None, interp=cv2.INTER_LINEAR):
-    h, w = arr.shape
-
-    if h < size:
-        arr = np.pad(arr, ((0, size - h), (0, 0)), mode='reflect')
-    if w < size:
-        arr = np.pad(arr, ((0, 0), (0, size - w)), mode='reflect')
-
-    h, w = arr.shape
-
-    if cx is None: cx = h // 2
-    if cy is None: cy = w // 2
-
-    cx = np.clip(cx, size // 2, h - size // 2)
-    cy = np.clip(cy, size // 2, w - size // 2)
-
-    half = size // 2
-
-    x1 = int(cx - half)
-    y1 = int(cy - half)
-
-    crop = arr[x1:x1 + size, y1:y1 + size]
-
-    if crop.shape != (size, size):
-        crop = cv2.resize(crop, (size, size), interpolation=interp)
-
-    return crop
+    return img[
+        mins[0]:maxs[0],
+        mins[1]:maxs[1],
+        mins[2]:maxs[2]
+    ], mask[
+        mins[0]:maxs[0],
+        mins[1]:maxs[1],
+        mins[2]:maxs[2]
+    ]
 
 
-def normalise(arr):
-    p1, p99 = np.percentile(arr, (1, 99))
-    arr = np.clip(arr, p1, p99)
-    return (arr - arr.min()) / (arr.max() - arr.min() + 1e-8)
+def resize_crop(img, size, interp):
+    h, w = img.shape
+
+    if h < size or w < size:
+        pad_h = max(0, size - h)
+        pad_w = max(0, size - w)
+        img = np.pad(img, ((0, pad_h), (0, pad_w)), mode="reflect")
+
+    return cv2.resize(img, (size, size), interpolation=interp)
 
 
 def find_annotation(ann_dir, case_id, filename):
-    for candidate in [
+    for p in [
         Path(ann_dir) / filename,
         Path(ann_dir) / f"{case_id}_1.nii.gz",
         Path(ann_dir) / f"{case_id}_2.nii.gz",
     ]:
-        if candidate.exists():
-            return str(candidate)
+        if p.exists():
+            return str(p)
     return None
 
 
@@ -109,7 +93,7 @@ def run_preprocessing():
     records = []
 
     print("=" * 55)
-    print("Preprocessing all centers")
+    print("PREPROCESSING STARTED")
     print("=" * 55)
 
     for center in CENTERS:
@@ -117,28 +101,22 @@ def run_preprocessing():
         img_dir = center_dir / "Image"
         ann_dir = center_dir / "Annotation"
 
-        label_files = list(center_dir.glob("*.xlsx"))
-        if len(label_files) == 0:
-            print(f"[SKIP] {center} no label file")
+        label_file = list(center_dir.glob("*.xlsx"))
+        if not label_file:
             continue
 
-        df_lbl = pd.read_excel(label_files[0])
+        df_lbl = pd.read_excel(label_file[0])
 
-        mibc_col = next(
-            (c for c in df_lbl.columns if any(k in c.upper() for k in ["MIBC","LABEL","INVASION","MUSCLE"])),
-            df_lbl.columns[0]
+        label_col = next(
+            (c for c in df_lbl.columns if "MIBC" in c.upper() or "LABEL" in c.upper()),
+            df_lbl.columns[-1]
         )
 
-        id_col = [c for c in df_lbl.columns if c != mibc_col][0]
+        id_col = [c for c in df_lbl.columns if c != label_col][0]
 
-        label_dict = dict(zip(
-            df_lbl[id_col].astype(str),
-            df_lbl[mibc_col].astype(int)
-        ))
+        label_map = dict(zip(df_lbl[id_col].astype(str), df_lbl[label_col].astype(int)))
 
-        img_files = sorted(img_dir.glob("*.nii.gz"))
-
-        for img_file in tqdm(img_files, desc=center):
+        for img_file in tqdm(list(img_dir.glob("*.nii.gz")), desc=center):
             case_id = img_file.stem.replace(".nii", "")
 
             img_vol = load_nii(str(img_file))
@@ -153,51 +131,53 @@ def run_preprocessing():
             if mask_vol is None:
                 continue
 
-            mask_vol = (mask_vol >= 0.5).astype(np.uint8)
+            mask_vol = (mask_vol > 0).astype(np.uint8)
 
-            label = label_dict.get(case_id)
+            label = label_map.get(case_id)
             if label is None:
                 continue
 
             img_vol, mask_vol = roi_crop(img_vol, mask_vol, EXPAND_VOXEL)
 
-            for sl in range(img_vol.shape[2]):
-                img_sl = img_vol[:, :, sl]
-                mask_sl = mask_vol[:, :, sl]
+            for i in range(1, img_vol.shape[2] - 1):
 
-                if mask_sl.sum() == 0:
+                mask_slice = mask_vol[:, :, i]
+                if mask_slice.sum() == 0:
                     continue
 
-                ox = random.randint(-RANDOM_OFFSET, RANDOM_OFFSET)
-                oy = random.randint(-RANDOM_OFFSET, RANDOM_OFFSET)
+                prev = img_vol[:, :, i - 1]
+                curr = img_vol[:, :, i]
+                next_ = img_vol[:, :, i + 1]
 
-                cx = img_sl.shape[0] // 2 + ox
-                cy = img_sl.shape[1] // 2 + oy
+                img_stack = np.stack([prev, curr, next_], axis=2)
 
-                seg_img = normalise(crop_and_resize(img_sl, PATCH_SEG, cx, cy))
-                seg_msk = crop_and_resize(mask_sl, PATCH_SEG, cx, cy, cv2.INTER_NEAREST)
+                img_stack = normalize(img_stack)
+                curr_mask = mask_slice
 
-                fname = f"{center}_{case_id}_sl{sl:03d}"
+                seg_img = resize_crop(img_stack[:, :, 1], PATCH_SEG, cv2.INTER_LINEAR)
+                seg_msk = resize_crop(curr_mask, PATCH_SEG, cv2.INTER_NEAREST)
+
+                cls_img = resize_crop(img_stack[:, :, 1], PATCH_CLS, cv2.INTER_LINEAR)
+
+                fname = f"{center}_{case_id}_sl{i:03d}"
 
                 cv2.imwrite(str(seg_img_dir / f"{fname}.png"), (seg_img * 255).astype(np.uint8))
                 cv2.imwrite(str(seg_msk_dir / f"{fname}.png"), (seg_msk * 255).astype(np.uint8))
-
-                cls_img = normalise(crop_and_resize(img_sl, PATCH_CLS))
                 cv2.imwrite(str(cls_img_dir / f"{fname}.png"), (cls_img * 255).astype(np.uint8))
 
                 records.append({
                     "filename": fname,
                     "center": center,
                     "patient": case_id,
-                    "slice": sl,
+                    "slice": i,
                     "label": int(label)
                 })
 
     df = pd.DataFrame(records)
     df.to_csv(Path(DATA_PROC) / "labels.csv", index=False)
 
-    print("\nDone")
-    print(f"Total slices: {len(df)}")
+    print("\nDONE")
+    print(f"Total: {len(df)}")
     print(f"MIBC: {df['label'].sum()}")
     print(f"NMIBC: {(df['label']==0).sum()}")
 

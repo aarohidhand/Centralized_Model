@@ -21,18 +21,13 @@ from configs.config import (
     SPLITS, DATA_PROC, CKPT_CLS, LOG_CLS,
     CLS_EPOCHS, CLS_BATCH, CLS_LR_HEAD, CLS_LR_FINETUNE,
     CLS_FINETUNE_EP, CLS_CLASSES, CLS_PRETRAINED,
-    DEVICE, NUM_WORKERS, PIN_MEMORY,
     SAVE_EVERY, LOG_EVERY, PATIENCE, CV_FOLDS
 )
 
 
 def train_one_fold(fold, run_cv=True):
     tag = f"fold{fold}" if run_cv else "full"
-
-    if not torch.cuda.is_available():
-        raise RuntimeError("CUDA not available")
-
-    device = torch.device("cuda")
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     ckpt_dir = Path(CKPT_CLS) / tag
     log_dir  = Path(LOG_CLS)  / tag
@@ -46,8 +41,8 @@ def train_one_fold(fold, run_cv=True):
     train_ds = BcaClsDataset(f"{SPLITS}/cls_train.csv", DATA_PROC, True, cv_fold)
     val_ds   = BcaClsDataset(f"{SPLITS}/cls_val.csv",   DATA_PROC, False, None)
 
-    train_dl = DataLoader(train_ds, CLS_BATCH, True, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY)
-    val_dl   = DataLoader(val_ds, CLS_BATCH, False, num_workers=NUM_WORKERS, pin_memory=PIN_MEMORY)
+    train_dl = DataLoader(train_ds, CLS_BATCH, True, num_workers=0, pin_memory=True)
+    val_dl   = DataLoader(val_ds, CLS_BATCH, False, num_workers=0, pin_memory=True)
 
     print(f"\n[{tag}] Train:{len(train_ds)} Val:{len(val_ds)}")
 
@@ -55,30 +50,30 @@ def train_one_fold(fold, run_cv=True):
     n0, n1 = (labels == 0).sum(), (labels == 1).sum()
     weight = torch.tensor([1.0, n0 / (n1 + 1e-8)], dtype=torch.float).to(device)
 
-    model = build_resnet50(CLS_CLASSES, CLS_PRETRAINED, device="cuda")
+    model = build_resnet50(CLS_CLASSES, CLS_PRETRAINED, device=device)
 
     criterion = nn.CrossEntropyLoss(weight=weight)
 
     freeze_backbone(model)
 
-    optimizer = torch.optim.Adam(
+    optimizer = torch.optim.AdamW(
         filter(lambda p: p.requires_grad, model.parameters()),
         lr=CLS_LR_HEAD
     )
 
-    scaler = torch.cuda.amp.GradScaler()
-
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(
-        optimizer, mode='max', factor=0.3, patience=10
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+        optimizer, T_max=CLS_EPOCHS
     )
 
-    finetuned = False
+    scaler = torch.amp.GradScaler(enabled=(device.type == "cuda"))
+
     best_auc = 0.0
     no_improve = 0
+    finetuned = False
 
     for epoch in range(1, CLS_EPOCHS + 1):
 
-        if epoch == CLS_FINETUNE_EP + 1 and not finetuned:
+        if epoch == CLS_FINETUNE_EP and not finetuned:
             unfreeze_for_finetuning(model, optimizer, CLS_LR_FINETUNE)
             finetuned = True
 
@@ -86,18 +81,19 @@ def train_one_fold(fold, run_cv=True):
         train_loss = 0.0
 
         for imgs, labels_b, _ in tqdm(train_dl, desc=f"E{epoch:03d} train", leave=False):
-            imgs = imgs.to(device)
-            labels_b = labels_b.to(device)
+            imgs = imgs.to(device, non_blocking=True)
+            labels_b = labels_b.to(device, non_blocking=True)
 
             imgs = prepare_input(imgs)
 
             optimizer.zero_grad()
 
-            with torch.cuda.amp.autocast():
+            with torch.amp.autocast(device_type="cuda", enabled=(device.type == "cuda")):
                 logits = model(imgs)
                 loss = criterion(logits, labels_b)
 
             scaler.scale(loss).backward()
+            torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
             scaler.step(optimizer)
             scaler.update()
 
@@ -112,8 +108,8 @@ def train_one_fold(fold, run_cv=True):
 
         with torch.no_grad():
             for imgs, labels_b, _ in val_dl:
-                imgs = imgs.to(device)
-                labels_b = labels_b.to(device)
+                imgs = imgs.to(device, non_blocking=True)
+                labels_b = labels_b.to(device, non_blocking=True)
 
                 imgs = prepare_input(imgs)
 
@@ -129,7 +125,7 @@ def train_one_fold(fold, run_cv=True):
         metrics = compute_cls_metrics(np.array(all_probs), np.array(all_labels))
         val_auc = metrics["AUC"]
 
-        scheduler.step(val_auc)
+        scheduler.step()
 
         writer.add_scalar("Loss/train", train_loss, epoch)
         writer.add_scalar("Loss/val", val_loss, epoch)
@@ -168,8 +164,9 @@ def train_classification(use_cv=True):
     print("Training ResNet-50 Classification")
     print("=" * 55)
 
+    scores = []
+
     if use_cv:
-        scores = []
         for fold in range(CV_FOLDS):
             print(f"\nFOLD {fold+1}/{CV_FOLDS}")
             auc = train_one_fold(fold, True)

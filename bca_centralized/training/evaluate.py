@@ -3,6 +3,7 @@ import torch
 from torch.utils.data import DataLoader, Subset
 import pandas as pd
 import numpy as np
+import torch.nn.functional as F
 
 try:
     BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -16,7 +17,7 @@ from datasets.bca_dataset import BcaMultiTaskDataset
 from utils.metrics import compute_seg_metrics, compute_cls_metrics, MetricStore
 from configs.config import (
     SPLITS, DATA_PROC, CKPT_MULTI,
-    SEG_IN_CH, SEG_OUT_CH, SEG_THRESHOLD
+    SEG_THRESHOLD
 )
 
 
@@ -33,26 +34,31 @@ def get_ckpt_path():
 
 def evaluate_multitask():
     print("\n" + "=" * 60)
-    print("MULTITASK EVALUATION (Segmentation + Classification)")
+    print("MULTITASK EVALUATION")
     print("=" * 60)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     ckpt_path = get_ckpt_path()
     if ckpt_path is None:
-        print("No checkpoint found.")
+        print("No checkpoint found")
         return
 
-    model = MultiTaskUNet(SEG_IN_CH, SEG_OUT_CH).to(device)
+    model = MultiTaskUNet().to(device)
 
     ckpt = torch.load(ckpt_path, map_location=device)
-    model.load_state_dict(ckpt["model_state"])
+    if isinstance(ckpt, dict) and "model_state" in ckpt:
+        model.load_state_dict(ckpt["model_state"])
+    else:
+        model.load_state_dict(ckpt)
+
     model.eval()
 
-    print(f"Loaded: {ckpt_path}\n")
+    print(f"Loaded: {ckpt_path}")
 
-    test_ds = BcaMultiTaskDataset(f"{SPLITS}/seg_test.csv", DATA_PROC, is_train=False)
-    test_df = pd.read_csv(f"{SPLITS}/seg_test.csv")
+    test_csv = f"{SPLITS}/seg_test.csv"
+    test_ds = BcaMultiTaskDataset(test_csv, DATA_PROC, is_train=False)
+    test_df = pd.read_csv(test_csv)
 
     for c_id in [1, 2, 3, 4]:
         mask = test_df["center"].astype(str).str.endswith(str(c_id))
@@ -65,7 +71,7 @@ def evaluate_multitask():
             Subset(test_ds, idxs),
             batch_size=8,
             shuffle=False,
-            num_workers=2,
+            num_workers=0,
             pin_memory=True
         )
 
@@ -75,11 +81,14 @@ def evaluate_multitask():
 
         with torch.no_grad():
             for imgs, masks, labels in loader:
-                imgs = imgs.to(device)
-                masks = masks.to(device)
-                labels = labels.to(device)
+                imgs = imgs.to(device, non_blocking=True)
+                masks = masks.to(device, non_blocking=True)
+                labels = labels.to(device, non_blocking=True)
 
                 seg_out, cls_out = model(imgs)
+
+                if seg_out.shape != masks.shape:
+                    seg_out = F.interpolate(seg_out, size=masks.shape[2:], mode="bilinear", align_corners=False)
 
                 seg_probs = torch.sigmoid(seg_out)
 
@@ -96,17 +105,14 @@ def evaluate_multitask():
 
         print(f"\nCenter {c_id}")
         print("-" * 40)
-        print(f"Segmentation:")
-        print(f"  DSC:  {seg_metrics.get('DSC', 0):.4f}")
-        print(f"  IoU:  {seg_metrics.get('IoU', 0):.4f}")
-        print(f"  HD95: {seg_metrics.get('HD95', None)}")
-
-        print(f"Classification:")
-        print(f"  AUC:  {cls_metrics['AUC']:.4f}")
-        print(f"  Acc:  {cls_metrics['Accuracy']:.4f}")
-        print(f"  Sens: {cls_metrics['Sensitivity']:.4f}")
-        print(f"  Spec: {cls_metrics['Specificity']:.4f}")
-        print(f"  F1:   {cls_metrics['F1']:.4f}")
+        print(f"DSC:  {seg_metrics.get('DSC', 0):.4f}")
+        print(f"IoU:  {seg_metrics.get('IoU', 0):.4f}")
+        print(f"HD95: {seg_metrics.get('HD95', None)}")
+        print(f"AUC:  {cls_metrics['AUC']:.4f}")
+        print(f"Acc:  {cls_metrics['Accuracy']:.4f}")
+        print(f"Sens: {cls_metrics['Sensitivity']:.4f}")
+        print(f"Spec: {cls_metrics['Specificity']:.4f}")
+        print(f"F1:   {cls_metrics['F1']:.4f}")
 
 
 if __name__ == "__main__":

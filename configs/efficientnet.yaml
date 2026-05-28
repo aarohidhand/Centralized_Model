@@ -1,0 +1,36 @@
+# configs/efficientnet.yaml
+# EfficientNet-B0 — Ablation Baseline
+# FIXED: enc_ch corrected, channels verified
+
+name: efficientnet_b0
+
+model_arch: efficientnet
+in_channels: 5
+model_type: cnn
+dp_rate: 0.15
+
+# ── Optimizer ─────────────────────────────────
+lr: 3.0e-5
+enc_lr_ratio: 0.25       # encoder: 3e-5 * 0.25 = 7.5e-6
+weight_decay: 1.5e-4
+min_lr_ratio: 0.05
+
+# ── Training schedule ─────────────────────────
+epochs: 180
+batch_size: 8
+accum_steps: 3           # effective batch = 24
+warmup_epochs: 10
+cls_rampup_epochs: 10
+patience: 70
+eval_every: 5
+
+# ── Loss weights ──────────────────────────────
+seg_weight: 0.85
+cls_weight: 0.15
+focal_gamma: 2.0
+mibc_alpha: 1.4
+ds_weights: [0.50, 0.25]
+tversky_weight: 0.20
+
+# ── AMP ───────────────────────────────────────
+use_amp: true

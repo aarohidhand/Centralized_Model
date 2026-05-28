@@ -1,0 +1,33 @@
+# configs/medsam.yaml
+# MedSAM ViT-B + Swin-Tiny Hybrid
+# RTX 4070 12GB - batch=4, accum=6, effective=24
+
+name: medsam_swin_hybrid
+model_arch: medsam
+in_channels: 5
+model_type: cnn
+n_frozen_blocks: 4
+dp_rate: 0.15
+medsam_checkpoint: "checkpoints/medsam_vit_b.pth"
+
+lr: 8.0e-6
+enc_lr_ratio: 0.05
+weight_decay: 1.0e-4
+min_lr_ratio: 0.08
+
+epochs: 200
+batch_size: 4
+accum_steps: 6
+warmup_epochs: 15
+cls_rampup_epochs: 10
+patience: 60
+eval_every: 5
+
+seg_weight: 0.80
+cls_weight: 0.20
+focal_gamma: 2.0
+mibc_alpha: 1.6
+ds_weights: [0.50, 0.25]
+tversky_weight: 0.20
+
+use_amp: true

@@ -1,0 +1,10 @@
+model,aug,dsc,auc,combined,epoch,exp,beat_dsc,beat_auc
+EfficientNet-B0,No Aug,0.7551,0.7857,0.7689,34,exp01_eff_noaug,✗,✗
+EfficientNet-B0,GIN Only,0.7909,0.8571,0.8207,79,exp02_eff_ginonly,✗,✗
+EfficientNet-B0,Full Aug,0.8088,0.7679,0.7904,79,exp03_eff_fullaug,✗,✗
+ResNet50+CBAM,No Aug,0.7652,0.7589,0.7624,74,exp04_res50_noaug,✗,✗
+ResNet50+CBAM,GIN Only,0.7629,0.7411,0.7531,89,exp05_res50_ginonly,✗,✗
+ResNet50+CBAM,Full Aug,0.8217,0.8482,0.8336,94,exp06_res50_fullaug,✗,✗
+Swin Hybrid,No Aug,0.8209,0.8929,0.8533,124,exp10_swin_noaug,✗,✓
+Swin Hybrid,GIN Only,0.837,0.8571,0.8461,194,exp11_swin_ginonly,✗,✗
+Swin Hybrid,Full Aug,0.8123,0.875,0.8405,29,exp12_swin_fullaug,✗,✓

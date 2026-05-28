@@ -1,0 +1,7 @@
+{
+  "project_root": "C:\\Users\\Mayank\\Desktop\\fedbca_medsam_v3\\fedbca_medsam",
+  "data_root": "C:\\Users\\Mayank\\Desktop\\FedBCa",
+  "preprocessed": "C:\\Users\\Mayank\\Desktop\\fedbca_medsam_v3\\fedbca_medsam\\preprocessed",
+  "medsam_ckpt": "C:\\Users\\Mayank\\Desktop\\fedbca_medsam_v3\\fedbca_medsam\\checkpoints\\medsam_vit_b.pth",
+  "experiments": "C:\\Users\\Mayank\\Desktop\\fedbca_medsam_v3\\fedbca_medsam\\experiments"
+}

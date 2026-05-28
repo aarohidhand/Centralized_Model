@@ -1,3 +1,7 @@
+checkpoints/
+experiments/
+preprocessed/
+
 # Ignore datasets
 data/
 */data/
@@ -5,7 +9,6 @@ data/
 # Ignore outputs
 outputs/
 */outputs/
-
 # Ignore models
 *.pth
 *.pt

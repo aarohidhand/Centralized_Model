@@ -1,0 +1,42 @@
+# configs/medsam.yaml
+# MedSAM ViT-B Multi-Task Config
+# RTX 4070 12GB — batch=4, accum=6, effective=24
+
+name: medsam_vit_b
+
+# ── Model ─────────────────────────────────────
+model_arch: medsam
+in_channels: 5
+model_type: cnn          # uses 256x256 CNN preprocessed files
+freeze_encoder: false    # fine-tune encoder at low LR
+dp_rate: 0.15
+
+# ── MedSAM checkpoint ─────────────────────────
+# Set this path after downloading
+medsam_checkpoint: "checkpoints/medsam_vit_b.pth"
+
+# ── Optimizer ─────────────────────────────────
+lr: 8.0e-6               # low LR for large pretrained ViT
+enc_lr_ratio: 0.05       # ViT encoder: 8e-6 * 0.05 = 4e-7 (very slow)
+weight_decay: 1.0e-4
+min_lr_ratio: 0.05       # cosine decays to lr * 0.05
+
+# ── Training schedule ─────────────────────────
+epochs: 200
+batch_size: 4
+accum_steps: 6           # effective batch = 24
+warmup_epochs: 15
+cls_rampup_epochs: 20    # classification gradient starts at ep 20
+patience: 80
+eval_every: 5
+
+# ── Loss weights ──────────────────────────────
+seg_weight: 0.85
+cls_weight: 0.15
+focal_gamma: 2.0
+mibc_alpha: 1.4
+ds_weights: [0.50, 0.25]
+tversky_weight: 0.20     # reduced from 0.35 to prevent over-prediction
+
+# ── AMP ───────────────────────────────────────
+use_amp: true            # ViT LayerNorm is AMP-stable (no BatchNorm2d)

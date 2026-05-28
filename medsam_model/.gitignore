@@ -1,0 +1,12 @@
+checkpoints/
+experiments/
+preprocessed/
+
+*.pth
+*.pt
+*.ckpt
+*.pkl
+*.npy
+
+__pycache__/
+.ipynb_checkpoints/
